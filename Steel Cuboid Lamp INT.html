@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Steel Cuboid Lamp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;
+    margin:0;
+    background:transparent;
+    overflow:hidden;
+    touch-action:none;
+  }
+  #stage{
+    position:relative;
+    width:100%;
+    height:100%;
+    min-height:420px;
+    cursor:grab;
+  }
+  #stage.dragging{cursor:grabbing;}
+  canvas{display:block;width:100%;height:100%;position:relative;z-index:1;}
+  #glow{
+    position:absolute;
+    inset:0;
+    background:radial-gradient(circle at 50% 50%, rgba(255,171,97,0.42), rgba(255,171,97,0) 58%);
+    filter:blur(34px);
+    pointer-events:none;
+    animation:pulse 3.4s ease-in-out infinite;
+    z-index:0;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:.5; transform:scale(0.96);}
+    50%{opacity:.85; transform:scale(1.04);}
+  }
+  #hint{
+    position:absolute;
+    left:50%;
+    bottom:6%;
+    transform:translateX(-50%);
+    font-family:'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight:500;
+    font-size:12px;
+    letter-spacing:.04em;
+    color:rgba(180,185,192,.55);
+    pointer-events:none;
+    transition:opacity .6s ease;
+    z-index:2;
+  }
+  #hint.hidden{opacity:0;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="hint">drag to rotate</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  // ---- editable content ----
+  var CONFIG = {
+    panels: ["INQUIRY", "BUILD", "DESIGN", "REFINE"],
+    sub: ["02", "04", "01", "03"],
+    width: 1.15,
+    depth: 1.15,
+    height: 2.6,
+    linen: "#efe6d6",
+    ink: "#FA0706",
+    glow: "#ffab61",
+    steel: "#c7ccd2"
+  };
+
+  var stage = document.getElementById('stage');
+  var hint = document.getElementById('hint');
+  var glowEl = document.getElementById('glow');
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  camera.position.set(0, 0.15, 7.2);
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stage.appendChild(renderer.domElement);
+
+  function resize(){
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- lighting ----
+  scene.add(new THREE.AmbientLight(0x8890a0, 0.5));
+  var key = new THREE.DirectionalLight(0xffffff, 0.8);
+  key.position.set(3, 4, 5);
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(0x9fb4ff, 0.35);
+  rim.position.set(-4, -2, -3);
+  scene.add(rim);
+  var bulb = new THREE.PointLight(CONFIG.glow, 2.2, 7, 2);
+  bulb.position.set(0, 0, 0);
+  scene.add(bulb);
+
+  var group = new THREE.Group();
+  scene.add(group);
+
+  // ---- linen weave texture with text ----
+  function drawLinen(ctx, w, h){
+    ctx.fillStyle = CONFIG.linen;
+    ctx.fillRect(0, 0, w, h);
+    // woven crosshatch
+    ctx.globalAlpha = 0.5;
+    var step = 5;
+    for (var y = 0; y < h; y += step){
+      ctx.strokeStyle = (y / step) % 2 === 0 ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+    for (var x = 0; x < w; x += step){
+      ctx.strokeStyle = (x / step) % 2 === 0 ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.045)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // subtle grain
+    var grain = 2200;
+    for (var i = 0; i < grain; i++){
+      var gx = Math.random() * w, gy = Math.random() * h;
+      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)';
+      ctx.fillRect(gx, gy, 1, 1);
+    }
+    // soft vignette so edges read as fabric folds
+    var vg = ctx.createRadialGradient(w/2, h/2, h*0.25, w/2, h/2, h*0.62);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(60,45,25,0.14)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  function makeTextTexture(label, sub){
+    var c = document.createElement('canvas');
+    c.width = 512; c.height = 1024;
+    var ctx = c.getContext('2d');
+    drawLinen(ctx, c.width, c.height);
+
+    ctx.textAlign = 'center';
+    ctx.save();
+    ctx.translate(c.width/2, c.height/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillStyle = CONFIG.ink;
+    ctx.font = '500 112px "DM Sans", sans-serif';
+    ctx.fillText(label, 0, 40);
+    ctx.fillStyle = 'rgba(250,7,6,0.55)';
+    ctx.font = '500 32px "DM Sans", sans-serif';
+    ctx.fillText(sub, 0, -140);
+    ctx.restore();
+
+    var tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  var w = CONFIG.width, h = CONFIG.height, d = CONFIG.depth;
+  var geo = new THREE.BoxGeometry(w, h, d, 1, 1, 1);
+  var capMat = new THREE.MeshStandardMaterial({ color: CONFIG.steel, metalness: 0.85, roughness: 0.35 });
+
+  function panelMat(tex){
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      metalness: 0.0,
+      roughness: 0.85,
+      emissive: new THREE.Color(CONFIG.glow),
+      emissiveIntensity: 0.28
+    });
+  }
+
+  var box, group1 = group;
+
+  function buildBox(){
+    var materials = [
+      panelMat(makeTextTexture(CONFIG.panels[0], CONFIG.sub[0])), // +x
+      panelMat(makeTextTexture(CONFIG.panels[1], CONFIG.sub[1])), // -x
+      capMat, // +y (short, no text)
+      capMat, // -y (short, no text)
+      panelMat(makeTextTexture(CONFIG.panels[2], CONFIG.sub[2])), // +z
+      panelMat(makeTextTexture(CONFIG.panels[3], CONFIG.sub[3]))  // -z
+    ];
+    box = new THREE.Mesh(geo, materials);
+    group.add(box);
+
+    // steel edge members
+    var edgesGeo = new THREE.EdgesGeometry(geo);
+    var positions = edgesGeo.attributes.position;
+    var steelMat = new THREE.MeshStandardMaterial({ color: CONFIG.steel, metalness: 0.9, roughness: 0.28 });
+    var radius = 0.028;
+    for (var i = 0; i < positions.count; i += 2){
+      var a = new THREE.Vector3().fromBufferAttribute(positions, i);
+      var b = new THREE.Vector3().fromBufferAttribute(positions, i + 1);
+      var len = a.distanceTo(b);
+      var cyl = new THREE.CylinderGeometry(radius, radius, len, 8);
+      var mesh = new THREE.Mesh(cyl, steelMat);
+      var mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+      mesh.position.copy(mid);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), b.clone().sub(a).normalize());
+      group.add(mesh);
+    }
+    var jointGeo = new THREE.SphereGeometry(radius * 1.4, 10, 10);
+    var corners = [];
+    [-1,1].forEach(function(sx){[-1,1].forEach(function(sy){[-1,1].forEach(function(sz){
+      corners.push(new THREE.Vector3(sx*w/2, sy*h/2, sz*d/2));
+    });});});
+    corners.forEach(function(p){
+      var j = new THREE.Mesh(jointGeo, steelMat);
+      j.position.copy(p);
+      group.add(j);
+    });
+  }
+
+  // ---- interaction ----
+  var initialRot = new THREE.Euler(-0.18, 0.55, 0);
+  group.rotation.copy(initialRot);
+
+  var dragging = false;
+  var last = { x: 0, y: 0 };
+  var returning = false;
+  var hintHidden = false;
+
+  function pointerPos(e){
+    var t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+  }
+  function onDown(e){
+    dragging = true;
+    returning = false;
+    stage.classList.add('dragging');
+    if (!hintHidden){ hint.classList.add('hidden'); hintHidden = true; }
+    last = pointerPos(e);
+  }
+  function onMove(e){
+    if (!dragging) return;
+    var p = pointerPos(e);
+    var dx = p.x - last.x, dy = p.y - last.y;
+    group.rotation.y += dx * 0.009;
+    group.rotation.x += dy * 0.009;
+    group.rotation.x = Math.max(-1.1, Math.min(1.1, group.rotation.x));
+    last = p;
+    e.preventDefault && e.preventDefault();
+  }
+  function onUp(){
+    if (!dragging) return;
+    dragging = false;
+    returning = true;
+    stage.classList.remove('dragging');
+  }
+  stage.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  stage.addEventListener('touchstart', onDown, { passive: true });
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend', onUp);
+
+  // ---- loop ----
+  var clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+
+    if (dragging){
+      bulb.intensity = 2.3;
+    } else if (returning){
+      var ease = 1 - Math.pow(0.001, dt);
+      group.rotation.x += (initialRot.x - group.rotation.x) * ease * 4;
+      group.rotation.y += (initialRot.y - group.rotation.y) * ease * 4;
+      group.rotation.z += (initialRot.z - group.rotation.z) * ease * 4;
+      if (Math.abs(group.rotation.x - initialRot.x) < 0.001 && Math.abs(group.rotation.y - initialRot.y) < 0.001){
+        group.rotation.copy(initialRot);
+        returning = false;
+      }
+    } else {
+      group.rotation.y = initialRot.y + Math.sin(clock.elapsedTime * 0.35) * 0.035;
+      bulb.intensity = 2.1 + Math.sin(clock.elapsedTime * 1.1) * 0.15;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  function start(){
+    buildBox();
+    resize();
+    animate();
+  }
+
+  // wait for DM Sans to be ready before baking the canvas textures
+  if (document.fonts && document.fonts.load){
+    Promise.all([
+      document.fonts.load('500 112px "DM Sans"'),
+      document.fonts.load('500 32px "DM Sans"')
+    ]).catch(function(){}).then(start);
+  } else {
+    start();
+  }
+})();
+</script>
+</body>
+</html>
